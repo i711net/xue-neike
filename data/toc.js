@@ -44,6 +44,21 @@ window.IM = {
       if (!c) { console.warn('目录中没有章节：' + title); return; }
       c.lecture = map[title].lecture; c.keys = map[title].keys; c.quiz = map[title].quiz; c.ready = true;
     });
+  },
+  /* 补充内容：IM.extra('<系统id>', { '章节标题': { ddx: 鉴别诊断, rx: 常用药物与用法 } })
+     必须在该章节的 IM.fill 之后加载；内容会接在讲义末尾，并自动续接"一、二、三"编号。 */
+  extra: function (id, map) {
+    var s = this.systems.filter(function (x) { return x.id === id; })[0];
+    if (!s) { console.warn('未知系统', id); return; }
+    var N = ['一','二','三','四','五','六','七','八','九','十','十一','十二','十三','十四','十五'];
+    Object.keys(map).forEach(function (title) {
+      var c = s.chapters.filter(function (x) { return x.title === title; })[0];
+      if (!c || !c.ready) { console.warn('补充内容找不到已上线的章节：' + title); return; }
+      var n = (c.lecture.match(/^## [一二三四五六七八九十]+、/gm) || []).length;
+      function head(t) { var h = '\n## ' + (n > 0 && N[n] ? N[n] + '、' : '') + t + '\n'; if (n > 0) n++; return h; }
+      if (map[title].ddx) c.lecture += head('鉴别诊断') + map[title].ddx;
+      if (map[title].rx) c.lecture += head('常用药物与用法') + map[title].rx;
+    });
   }
 };
 IM.systems.forEach(function (s) { s.chapters = s.chapters.map(function (t) { return { title: t, ready: false }; }); });
