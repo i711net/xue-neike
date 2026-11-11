@@ -8,6 +8,7 @@
          ['A3', 共用题干, [[小题, [5个选项], 下标, 解析], ...]]
          ['B1', [5个共用选项], [[小题, 下标, 解析], ...]]
    未填充的章节在页面上显示为“建设中”。
+   内容文件由 assets/app.js 按文件末尾的 IM.files 清单在后台加载。
    ============================================================ */
 window.IM = {
   systems: [
@@ -45,7 +46,7 @@ window.IM = {
       c.lecture = map[title].lecture; c.keys = map[title].keys; c.quiz = map[title].quiz; c.ready = true;
     });
   },
-  /* 补充内容：IM.extra('<系统id>', { '章节标题': { ddx: 鉴别诊断, rx: 常用药物与用法 } })
+  /* 补充内容：IM.extra('<系统id>', { '章节标题': { ddx: 鉴别诊断, rx: 常用药物与用法, quiz: 追加的题目 } })
      必须在该章节的 IM.fill 之后加载；内容会接在讲义末尾，并自动续接"一、二、三"编号。 */
   extra: function (id, map) {
     var s = this.systems.filter(function (x) { return x.id === id; })[0];
@@ -58,7 +59,22 @@ window.IM = {
       function head(t) { var h = '\n## ' + (n > 0 && N[n] ? N[n] + '、' : '') + t + '\n'; if (n > 0) n++; return h; }
       if (map[title].ddx) c.lecture += head('鉴别诊断') + map[title].ddx;
       if (map[title].rx) c.lecture += head('常用药物与用法') + map[title].rx;
+      if (map[title].quiz) c.quiz = (c.quiz || []).concat(map[title].quiz); // 追加在原有题目之后，已有题目的编号不变
     });
   }
 };
 IM.systems.forEach(function (s) { s.chapters = s.chapters.map(function (t) { return { title: t, ready: false }; }); });
+
+/* 各系统的内容文件清单（不带 .js 后缀，按加载顺序排列；补充文件 *-x、*-q 必须排在最后）。
+   页面先显示框架，再按此清单在后台逐个系统加载内容。新增内容文件时，在对应系统的数组里加上文件名即可，不需要改 index.html。 */
+IM.files = {
+  huxi: ['huxi', 'huxi2', 'huxi3', 'huxi-x', 'huxi-q'],
+  xunhuan: ['xunhuan', 'xunhuan2', 'xunhuan-x', 'xunhuan-q'],
+  xiaohua: ['xiaohua', 'xiaohua2', 'xiaohua3', 'xiaohua-x', 'xiaohua-q'],
+  miniao: ['miniao', 'miniao2'],
+  xueye: ['xueye', 'xueye2', 'xueye3'],
+  neifenmi: ['neifenmi', 'neifenmi2', 'neifenmi3'],
+  fengshi: ['fengshi', 'fengshi2'],
+  lihua: ['lihua', 'lihua2']
+};
+

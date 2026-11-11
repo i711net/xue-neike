@@ -47,7 +47,7 @@
     var h = 0, i; for (i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 9973;
     var k = h % o.length; return { o: o.slice(k).concat(o.slice(0, k)), a: (a - k + o.length) % o.length };
   }
-  IM.systems.forEach(function (s) {
+  function addBank(s) {
     s.chapters.forEach(function (c, ci) {
       (c.quiz || []).forEach(function (q, qi) {
         var b = { id: s.id + '-' + ci + '-' + qi, sys: s.id, ch: ci };
@@ -57,7 +57,37 @@
         bank.push(b);
       });
     });
-  });
+  }
+
+  /* ---------- 内容加载：先出框架，再在后台按系统加载 data/*.js ---------- */
+  var loaded = {}, loadFailed = false, busy = false;
+  function allLoaded() { return IM.systems.every(function (s) { return loaded[s.id]; }); }
+  function hashParts() { return decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean); }
+  function loadSys(s, cb) {
+    var fs = (IM.files && IM.files[s.id]) || [], left = fs.length;
+    function fin() { loaded[s.id] = true; addBank(s); cb(); }
+    if (!left) { fin(); return; }
+    fs.forEach(function (f) {
+      var el = document.createElement('script'); el.src = 'data/' + f + '.js'; el.async = false; // 并行下载、按顺序执行
+      el.onload = el.onerror = function (e) { if (e && e.type === 'error') loadFailed = true; if (--left === 0) fin(); };
+      document.body.appendChild(el);
+    });
+  }
+  function pump() {
+    if (busy) return;
+    var p = hashParts(), want = p[0] === 'learn' && p[1] && sys(p[1]);
+    var s = (want && !loaded[want.id]) ? want : IM.systems.filter(function (x) { return !loaded[x.id]; })[0];
+    if (!s) { if (!IM.loadedAll && loadFailed) alertBox('部分内容加载失败，请检查网络后刷新页面。'); IM.loadedAll = true; return; }
+    busy = true;
+    loadSys(s, function () {
+      busy = false;
+      var q = hashParts(), inChapter = q[0] === 'learn' && q[1] && q[2] !== undefined;
+      // 正在答题时不打断；正在读某一章时，只有本系统加载完才重画
+      if (!(S && !S.done && q[0] === 'exam' && q[1] === 'run') && (!inChapter || q[1] === s.id)) route(true);
+      pump();
+    });
+  }
+  function loadingBox(t) { return '<div class="empty"><b>' + t + '</b><p>首次打开需要几秒钟，请稍候。</p></div>'; }
   function countQ(blocks) { return blocks.reduce(function (n, b) { return n + b.items.length; }, 0); }
   function flatten(blocks) {
     var qs = [];
@@ -75,9 +105,9 @@
     var done = store.get('done', {});
     side.innerHTML = '<div class="side-title">学科目录</div>' + IM.systems.map(function (s) {
       var open = s.id === curSys;
-      return '<details class="side-sys"' + (open ? ' open' : '') + '><summary><span>' + s.icon + ' ' + esc(s.name) + '</span><em>' + readyCount(s) + '/' + s.chapters.length + '</em></summary><ol>' +
+      return '<details class="side-sys"' + (open ? ' open' : '') + '><summary><span>' + s.icon + ' ' + esc(s.name) + '</span><em>' + (loaded[s.id] ? readyCount(s) + '/' : '') + s.chapters.length + '</em></summary><ol>' +
         s.chapters.map(function (c, i) {
-          var cls = (c.ready ? '' : 'wip ') + (open && i === curCh ? 'cur ' : '') + (done[s.id + '-' + i] ? 'done' : '');
+          var cls = (c.ready || !loaded[s.id] ? '' : 'wip ') + (open && i === curCh ? 'cur ' : '') + (done[s.id + '-' + i] ? 'done' : '');
           return '<li class="' + cls + '"><a href="#/learn/' + s.id + '/' + i + '">' + esc(c.title) + '</a></li>';
         }).join('') + '</ol></details>';
     }).join('');
@@ -90,7 +120,7 @@
     main.innerHTML =
       '<section class="hero"><p class="eyebrow">INTERNAL MEDICINE</p><h1>西医内科学<br>学习与考试平台</h1>' +
       '<p class="lead">按系统、按章节整理讲义与重点，配执业医师考试题型的章节自测与计时模拟卷。先学，再练，最后上考场。</p>' +
-      '<div class="stats"><div><b>' + IM.systems.length + '</b>个系统</div><div><b>' + readyCh + '<i>/' + totalCh + '</i></b>章已上线</div><div><b>' + countQ(bank) + '</b>道试题</div></div></section>' +
+      '<div class="stats"><div><b>' + IM.systems.length + '</b>个系统</div><div><b>' + readyCh + '<i>/' + totalCh + '</i></b>章已上线</div><div><b>' + countQ(bank) + (allLoaded() ? '' : '<i>+</i>') + '</b>道试题</div></div></section>' +
       '<section class="doors">' +
       '<a class="door learn" href="#/learn"><span class="door-no">01</span><h2>学习区</h2><p>讲义精讲 · 重点提示 · 章节自测<br>标记学习进度，随学随测</p><span class="go">进入学习 →</span></a>' +
       '<a class="door exam" href="#/exam"><span class="door-no">02</span><h2>考试区</h2><p>A1 / A2 / A3·A4 / B1 题型<br>系统练习 · 计时模拟考 · 错题本' + (wrong ? '（' + wrong + ' 题待复习）' : '') + '</p><span class="go">进入考场 →</span></a>' +
@@ -103,8 +133,8 @@
     var done = store.get('done', {});
     return '<div class="grid">' + IM.systems.map(function (s) {
       var r = readyCount(s), d = s.chapters.filter(function (c, i) { return done[s.id + '-' + i]; }).length;
-      return '<a class="card' + (r ? '' : ' card-wip') + '" href="#/learn/' + s.id + '"><div class="card-h"><span class="ico">' + s.icon + '</span><h3>' + esc(s.name) + '</h3><span class="tag ' + (r ? 'on' : '') + '">' + (r ? '已上线' : '建设中') + '</span></div>' +
-        '<p>' + esc(s.desc) + '</p><div class="bar"><i style="width:' + (r ? Math.round(d / r * 100) : 0) + '%"></i></div><small>共 ' + s.chapters.length + ' 章 · 已上线 ' + r + ' 章' + (r ? ' · 已学 ' + d + ' 章' : '') + '</small></a>';
+      return '<a class="card' + (r || !loaded[s.id] ? '' : ' card-wip') + '" href="#/learn/' + s.id + '"><div class="card-h"><span class="ico">' + s.icon + '</span><h3>' + esc(s.name) + '</h3><span class="tag ' + (r ? 'on' : '') + '">' + (r ? '已上线' : (loaded[s.id] ? '建设中' : '加载中')) + '</span></div>' +
+        '<p>' + esc(s.desc) + '</p><div class="bar"><i style="width:' + (r ? Math.round(d / r * 100) : 0) + '%"></i></div><small>共 ' + s.chapters.length + ' 章' + (loaded[s.id] ? ' · 已上线 ' + r + ' 章' : ' · 内容加载中…') + (r ? ' · 已学 ' + d + ' 章' : '') + '</small></a>';
     }).join('') + '</div>';
   }
 
@@ -114,8 +144,8 @@
     var done = store.get('done', {});
     main.innerHTML = '<p class="crumb"><a href="#/learn">学习区</a> / ' + esc(s.name) + '</p><h1 class="page-h">' + s.icon + ' ' + esc(s.name) + '</h1><p class="lead">' + esc(s.desc) + '</p>' +
       '<ol class="chap-list">' + s.chapters.map(function (c, i) {
-        return '<li class="' + (c.ready ? '' : 'wip') + '"><a href="#/learn/' + s.id + '/' + i + '"><span class="n">' + (i + 1 < 10 ? '0' : '') + (i + 1) + '</span><span class="t">' + esc(c.title) + '</span>' +
-          (c.ready ? '<span class="m">' + (done[s.id + '-' + i] ? '✓ 已学 · ' : '') + countQ(bank.filter(function (b) { return b.sys === s.id && b.ch === i; })) + ' 题</span>' : '<span class="m">建设中</span>') + '</a></li>';
+        return '<li class="' + (c.ready || !loaded[s.id] ? '' : 'wip') + '"><a href="#/learn/' + s.id + '/' + i + '"><span class="n">' + (i + 1 < 10 ? '0' : '') + (i + 1) + '</span><span class="t">' + esc(c.title) + '</span>' +
+          (c.ready ? '<span class="m">' + (done[s.id + '-' + i] ? '✓ 已学 · ' : '') + countQ(bank.filter(function (b) { return b.sys === s.id && b.ch === i; })) + ' 题</span>' : '<span class="m">' + (loaded[s.id] ? '建设中' : '加载中…') + '</span>') + '</a></li>';
       }).join('') + '</ol>' +
       (readyCount(s) ? '<p><button class="btn" data-act="sys-practice" data-sys="' + s.id + '">本系统综合练习 →</button></p>' : '');
   }
@@ -124,6 +154,7 @@
     var head = '<p class="crumb"><a href="#/learn">学习区</a> / <a href="#/learn/' + s.id + '">' + esc(s.name) + '</a></p><h1 class="page-h">' + esc(c.title) + '</h1>';
     var nav = '<div class="pager">' + (i > 0 ? '<a href="#/learn/' + s.id + '/' + (i - 1) + '">← ' + esc(s.chapters[i - 1].title) + '</a>' : '<span></span>') +
       (i < s.chapters.length - 1 ? '<a href="#/learn/' + s.id + '/' + (i + 1) + '">' + esc(s.chapters[i + 1].title) + ' →</a>' : '<span></span>') + '</div>';
+    if (!c.ready && !loaded[s.id]) { main.innerHTML = head + loadingBox('本章内容加载中…') + nav; return; }
     if (!c.ready) { main.innerHTML = head + '<div class="empty"><b>本章内容建设中</b><p>章节目录已就位，讲义、重点与题库将在后续批次上线。</p></div>' + nav; return; }
     var blocks = bank.filter(function (b) { return b.sys === s.id && b.ch === i; });
     tab = tab || 'lecture';
@@ -158,6 +189,7 @@
   /* ---------- 页面：考试区大厅 ---------- */
   var S = null; // 当前会话
   function pageExam() {
+    if (!allLoaded()) { main.innerHTML = '<h1 class="page-h">考试区</h1>' + loadingBox('题库加载中…（已载入 ' + countQ(bank) + ' 题）'); return; }
     var live = IM.systems.filter(readyCount), wrong = Object.keys(store.get('wrong', {})).length, hist = store.get('hist', []);
     var total = countQ(bank);
     main.innerHTML = '<h1 class="page-h">考试区</h1><p class="lead">题型与国家执业医师资格考试一致：<b>A1</b> 单句型最佳选择题、<b>A2</b> 病例摘要型、<b>A3/A4</b> 病例组型、<b>B1</b> 标准配伍题。</p>' +
@@ -256,6 +288,7 @@
 
   /* ---------- 搜索 ---------- */
   function pageSearch(kw) {
+    if (!allLoaded()) { main.innerHTML = '<h1 class="page-h">搜索</h1>' + loadingBox('内容加载中，加载完成后自动显示搜索结果…'); return; }
     var hits = [];
     IM.systems.forEach(function (s) {
       s.chapters.forEach(function (c, i) {
@@ -270,8 +303,8 @@
   }
 
   /* ---------- 路由 ---------- */
-  function route() {
-    var p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
+  function route(keep) {
+    var p = hashParts(), y0 = keep === true ? window.pageYOffset : 0;
     clearInterval(timer); document.body.classList.remove('side-open');
     var area = p[0] || 'home', s;
     document.body.className = 'r-' + area + (area === 'learn' ? ' has-side' : '');
@@ -284,7 +317,7 @@
       if (p[1] === 'run') pageRun(); else if (p[1] === 'history') pageHistory(); else pageExam();
     } else if (area === 'search' && p[1]) pageSearch(p.slice(1).join('/'));
     else pageHome();
-    if (!(area === 'exam' && p[1] === 'run')) window.scrollTo(0, 0);
+    if (!(area === 'exam' && p[1] === 'run')) window.scrollTo(0, y0);
   }
 
   /* ---------- 事件 ---------- */
@@ -339,7 +372,8 @@
   document.getElementById('searchBox').addEventListener('keydown', function (e) { if (e.key === 'Enter' && this.value.trim()) { location.hash = '#/search/' + encodeURIComponent(this.value.trim()); this.blur(); } });
   document.getElementById('menuBtn').addEventListener('click', function () { if (!document.body.classList.contains('has-side')) { location.hash = '#/learn'; return; } document.body.classList.toggle('side-open'); });
   document.getElementById('sideMask').addEventListener('click', function () { document.body.classList.remove('side-open'); });
-  window.addEventListener('hashchange', route);
+  window.addEventListener('hashchange', function () { route(); pump(); });
   window.addEventListener('beforeunload', function (e) { if (S && !S.done && S.mode === 'exam') { e.preventDefault(); e.returnValue = ''; } });
   route();
+  pump();
 })();
