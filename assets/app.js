@@ -97,7 +97,7 @@
       '</section>' +
       '<h2 class="sec">学科总览</h2>' + sysGrid() +
       (hist.length ? '<p class="hint">最近一次模拟：' + esc(hist[0].title) + '，得分 ' + hist[0].score + ' 分。<a href="#/exam/history">查看成绩记录</a></p>' : '') +
-      '<p class="hint">当前<b>呼吸系统</b>与<b>循环系统</b>的主要章节已完整上线；其余系统的章节目录已搭好，内容分批建设中。</p>';
+      '<p class="hint">八个系统的章节已全部上线；每章讲义末尾附<b>鉴别诊断</b>与<b>常用药物与用法</b>，学完可做章节自测。</p>';
   }
   function sysGrid() {
     var done = store.get('done', {});
